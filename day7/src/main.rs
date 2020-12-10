@@ -1,5 +1,4 @@
 use std::str::FromStr;
-use strum_macros::{EnumString, Display};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use regex::Regex;
@@ -7,41 +6,11 @@ use lazy_static::lazy_static;
 use const_format::formatcp;
 use std::collections::HashSet;
 
-#[derive(Debug, PartialEq, EnumString, Display, Clone, Eq, Hash, Ord, PartialOrd)]
-#[strum(serialize_all = "mixed_case")] 
-enum Color {
-    Yellow,
-    Gold,
-    Blue,
-    Plum,
-    Black,
-    Red,
-    Orange,
-    White,
-    Olive,
-    Crimson,
-    Aqua,
-}
-
-#[derive(Debug, PartialEq, EnumString, Display, Clone, Eq, Hash, Ord, PartialOrd)]
-#[strum(serialize_all = "mixed_case")] 
-enum ColorModifier {
-    Bright,
-    Muted,
-    Dark,
-    Light,
-    Shiny,
-    Dotted,
-    Vibrant,
-    Faded,
-    Clear,
-    Pale,
-}
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash, Ord, PartialOrd)]
 struct Bag {
-    color: Color,
-    modifier: ColorModifier
+    color: String,
+    modifier: String
 }
 
 impl Bag {
@@ -60,8 +29,8 @@ impl FromStr for Bag {
         let modifier = cap.get(1).unwrap().as_str();
         let color = cap.get(2).unwrap().as_str();
 
-        let modifier = ColorModifier::from_str(modifier).unwrap();
-        let color = Color::from_str(color).unwrap();
+        let modifier = String::from(modifier);
+        let color = String::from(color);
 
 
         Ok(Bag {color, modifier})
@@ -117,37 +86,6 @@ fn get_rules_from_file(filename: &str) -> Vec::<Rule> {
     entries 
 }
 
-fn get_valid_stacks<'a>(rules: &'a Vec<Rule>, bag: &Bag) -> Vec<Vec<&'a Rule>> {
-    // essentially do a bottom up search for the bag and find all rules that match
-    let mut ret = Vec::<Vec::<&Rule>>::new();
-    let mut seen_bags = HashSet::<&Bag>::new();
-    let mut queue = vec![bag];
-    while queue.len() > 0 {
-        let current = queue.pop().unwrap();
-        if seen_bags.contains(current) {
-            continue;
-        }
-        seen_bags.insert(current);
-
-        let matching_rules_for_current = rules.iter().filter(|x| x.can_contain(current)).collect::<Vec::<&Rule>>();
-        for rule in matching_rules_for_current.iter() {
-            let valid_rules_for_matches = get_valid_stacks(rules, &rule.outer_bag);
-            for stack in valid_rules_for_matches {
-                if !seen_bags.contains(&stack.first().unwrap().outer_bag) {
-                    queue.push(&stack.first().unwrap().outer_bag);
-                }
-                ret.push(stack);
-            }
-        }
-        if matching_rules_for_current.len() > 0 {
-            ret.push(matching_rules_for_current);
-        }
-
-        
-    }
-    ret
-}
-
 // we use a wrapper to sort and dedup exactly once instead of during recursing
 fn get_valid_bags<'a>(rules: &'a Vec<Rule>, bag: &Bag) -> Vec<&'a Bag> {
     let mut ret = get_valid_bags_inner(rules, bag);
@@ -187,26 +125,38 @@ fn get_valid_bags_inner<'a>(rules: &'a Vec<Rule>, bag: &Bag) -> Vec<&'a Bag> {
     ret
 }
 
+fn get_required_bags(rules: &Vec<Rule>, bag: &Bag) -> u32 {
+    let mut ret:u32 = 0;
+    let rule = &rules.iter().find(|x| &x.outer_bag == bag).unwrap();
+    for (count, bag) in rule.inner_bags.iter() {
+        ret += count;
+        ret += get_required_bags(rules, bag) * count;
+    }
+    ret
+}
+
 fn main() {
     let rules = get_rules_from_file("input.txt");
-    let target_bag = Bag {color: Color::Gold, modifier: ColorModifier::Shiny};
+    let target_bag = Bag {color: String::from("gold"), modifier: String::from("shiny")};
     let valid_bags = get_valid_bags(&rules, &target_bag);
     println!("Answer for part 1: {}", valid_bags.len());
+    let c = get_required_bags(&rules, &target_bag);
+    println!("Answer for part 2: {}", c);
 }
 
 #[cfg(test)]
 mod tests {
 use std::str::FromStr;
-use crate::{Bag, Color, ColorModifier, Rule, get_rules_from_file, get_valid_bags};
+use crate::{Bag, Rule, get_rules_from_file, get_valid_bags, get_required_bags};
     #[test]
     fn single_bag() {
         let bag = Bag::from_str("light red bags").unwrap();
-        assert_eq!(bag.color, Color::Red);
-        assert_eq!(bag.modifier, ColorModifier::Light);
+        assert_eq!(bag.color, "red");
+        assert_eq!(bag.modifier, "light");
 
         let bag = Bag::from_str("dark orange bag").unwrap();
-        assert_eq!(bag.color, Color::Orange);
-        assert_eq!(bag.modifier, ColorModifier::Dark);
+        assert_eq!(bag.color, "orange");
+        assert_eq!(bag.modifier, "dark");
     }
 
     #[test]
@@ -225,10 +175,10 @@ use crate::{Bag, Color, ColorModifier, Rule, get_rules_from_file, get_valid_bags
     #[test]
     fn can_contain() {
         let rule = Rule::from_str("faded blue bags contain no other bags.").unwrap();
-        assert_eq!(rule.can_contain(&Bag {color: Color::Red, modifier: ColorModifier::Light}), false);
+        assert_eq!(rule.can_contain(&Bag {color: String::from("red"), modifier: String::from("light")}), false);
         let rule = Rule::from_str("bright white bags contain 1 shiny gold bag.").unwrap();
-        assert_eq!(rule.can_contain(&Bag {color: Color::Red, modifier: ColorModifier::Light}), false);
-        assert_eq!(rule.can_contain(&Bag {color: Color::Gold, modifier: ColorModifier::Shiny}), true);
+        assert_eq!(rule.can_contain(&Bag {color: String::from("red"), modifier: String::from("light")}), false);
+        assert_eq!(rule.can_contain(&Bag {color: String::from("gold"), modifier: String::from("shiny")}), true);
         let _ = Rule::from_str("light red bags contain 1 bright white bag, 2 muted yellow bags.").unwrap();
     }
 
@@ -236,8 +186,17 @@ use crate::{Bag, Color, ColorModifier, Rule, get_rules_from_file, get_valid_bags
     fn stacks() {
         let rules = get_rules_from_file("testinput.txt");
         assert_eq!(rules.len(), 9);
-        let test_bag = Bag {color: Color::Gold, modifier: ColorModifier::Shiny};
+        let test_bag = Bag {color: String::from("gold"), modifier: String::from("shiny")};
         let valid_bags = get_valid_bags(&rules, &test_bag);
         assert_eq!(valid_bags.len(), 4);
+    }
+
+    #[test]
+    fn bags() {
+        let rules = get_rules_from_file("testinput.txt");
+        assert_eq!(rules.len(), 9);
+        let test_bag = Bag {color: String::from("gold"), modifier: String::from("shiny")};
+        let c = get_required_bags(&rules, &test_bag);
+        assert_eq!(c, 32);
     }
 }
