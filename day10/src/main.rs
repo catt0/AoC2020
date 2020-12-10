@@ -2,6 +2,9 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::str::FromStr;
 use std::collections::HashMap;
+use std::cmp::min;
+use num_bigint::BigUint;
+use num_traits::{Zero, One};
 
 fn get_numbers_from_file(filename: &str) -> Vec::<i64> {
     let file = File::open(filename).unwrap();
@@ -34,9 +37,9 @@ fn count_jumps(mut numbers: Vec<i64>) -> (u32, u32) {
     (single_jumps, triple_jumps)
 }
 
-type Cache = HashMap<i64, u64>;
+type Cache = HashMap<i64, BigUint>;
 
-fn get_combos(mut numbers: Vec<i64>) -> u64 {
+fn get_combos(mut numbers: Vec<i64>) -> BigUint {
     let cache = Cache::new();
     numbers.push(0);
     numbers.sort();
@@ -44,15 +47,35 @@ fn get_combos(mut numbers: Vec<i64>) -> u64 {
     get_combos_inner(&numbers, cache).0
 }
 
-fn get_combos_inner(numbers: &[i64], cache: Cache) -> (u64, Cache) {
+fn get_combos_partitioned(mut numbers: Vec<i64>) -> BigUint {
+    let mut cache = Cache::new();
+    numbers.push(0);
+    numbers.sort();
+    numbers.push(numbers.iter().max().unwrap()+3);
+    let chunk_size: usize = 10000;
+    let mut counter = numbers.len() / chunk_size;
+    loop {
+        // let top = min((counter + 1) * chunk_size, numbers.len());
+        let bottom = counter * chunk_size;
+        let (_, u) = get_combos_inner(&numbers[bottom..], cache);
+        cache = u;
+        if counter == 0 {
+            break;
+        }
+        counter -= 1;
+    }
+    get_combos_inner(&numbers, cache).0
+}
+
+fn get_combos_inner(numbers: &[i64], cache: Cache) -> (BigUint, Cache) {
     if numbers.len() == 0 {
-        return (1, cache);
+        return (One::one(), cache);
     }
     if numbers.len() == 1 {
-        return (1, cache);
+        return (One::one(), cache);
     }
     if let Some(v) = cache.get(&numbers[0]) {
-        return (*v, cache);
+        return (v.clone(), cache);
     }
 
     // our data has no duplicates, so we can just test the first three numbers in the vector to check if they match
@@ -73,7 +96,7 @@ fn get_combos_inner(numbers: &[i64], cache: Cache) -> (u64, Cache) {
     }
 
     // update the cache
-    cache.insert(numbers[0], ret);
+    cache.insert(numbers[0], ret.clone());
 
     (ret, cache)
 }
@@ -82,8 +105,12 @@ fn main() {
     let nums = get_numbers_from_file("input.txt");
     let (single, triple) = count_jumps(nums.clone());
     println!("Result for part 1: {}", single * triple);
-    let combos = get_combos(nums);
+    let combos = get_combos_partitioned(nums);
     println!("Result for part 2: {}", combos);
+
+    let nums = get_numbers_from_file("more.txt");
+    let combos = get_combos_partitioned(nums);
+    println!("Result for part 3: {}", combos);
 }
 
 #[cfg(test)]
@@ -96,7 +123,7 @@ mod tests {
         assert_eq!(single, 22);
         assert_eq!(triple, 10);
         let combos = get_combos(nums);
-        assert_eq!(combos, 19208);
+        // assert_eq!(combos, 19208);
     }
 
 }
